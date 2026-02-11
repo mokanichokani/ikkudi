@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-type GameState = 'DIALOGUE' | 'PLAYING' | 'LEVEL_COMPLETE' | 'CODE_INPUT' | 'GAME_OVER' | 'VICTORY';
+type GameState = 'DIALOGUE' | 'PLAYING';
 
 interface Rect {
     x: number;
@@ -17,7 +17,6 @@ interface Platform extends Rect {
 
 interface LevelData {
     spawn: { x: number; y: number };
-    goal: { x: number; y: number };
     platforms: Platform[];
     dialogue: string;
 }
@@ -29,33 +28,32 @@ interface Cloud {
     scale: number;
 }
 
+interface Obstacle extends Rect {
+    kind: 'rock' | 'crate' | 'spike';
+}
+
 const PLAYER_SIZE = 80;
 const GROUND_HEIGHT = 50;
 const GRAVITY = 0.6;
 const JUMP_FORCE = -14;
-const MOVE_SPEED = 5;
-const FRICTION = 0.8;
-const WORLD_2_CODE = "MARIO";
+const BASE_RUN_SPEED = 6;
+const ROAD_TILE_WIDTH = 370;
+const ROAD_TILE_OVERLAP = 0;
+const OBSTACLE_MIN_GAP = 300;
+const OBSTACLE_MAX_GAP = 600;
+const OBSTACLE_MIN_HEIGHT = 24;
+const OBSTACLE_MAX_HEIGHT = 55;
+const OBSTACLE_MIN_WIDTH = 20;
+const OBSTACLE_MAX_WIDTH = 50;
+const SCORE_PER_PIXEL = 0.05;
 
 // Level 1 Data
 const LEVEL_1: LevelData = {
     spawn: { x: 50, y: 400 },
-    goal: { x: 2000, y: 450 },
-    dialogue: "Adventure begins! Use Arrow Keys to move and Space to Jump!",
+    dialogue: "Adventure begins! Press Space to start riding (and jump)!",
     platforms: [
-        // Ground - Straight Road
-        { x: 0, y: 0, width: 2500, height: GROUND_HEIGHT, type: 'ground' },
-    ]
-};
-
-// Level 2 Data
-const LEVEL_2: LevelData = {
-    spawn: { x: 50, y: 400 },
-    goal: { x: 2500, y: 350 },
-    dialogue: "World 2! It's much simpler here, but watch your step.",
-    platforms: [
-        // Ground - Straight Road
-        { x: 0, y: 0, width: 3000, height: GROUND_HEIGHT, type: 'ground' },
+        // Ground - Infinite-ish Road (rendered as visible tiles only)
+        { x: 0, y: 0, width: 1_000_000_000, height: GROUND_HEIGHT, type: 'ground' },
     ]
 };
 
@@ -73,23 +71,28 @@ export default function PlatformerGame() {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
     // Game State
-    const [currentWorld, setCurrentWorld] = useState(1);
     const [gameState, setGameState] = useState<GameState>('DIALOGUE');
-    const [codeInput, setCodeInput] = useState('');
-    const [codeError, setCodeError] = useState(false);
-
-    const currentLevel = currentWorld === 1 ? LEVEL_1 : LEVEL_2;
+    const currentLevel = LEVEL_1;
+    const [score, setScore] = useState(0);
+    const [maxScore, setMaxScore] = useState(0);
 
     // Assets
     const cloudImg = useRef<HTMLImageElement | null>(null);
     const roadImg = useRef<HTMLImageElement | null>(null); // New Asset
-    const shahadImg = useRef<HTMLImageElement | null>(null);
     const playerImg = useRef<HTMLImageElement | null>(null);
+    const jumpSound = useRef<HTMLAudioElement | null>(null);
 
     // Physics Refs
     const playerRef = useRef({ x: 0, y: 0, vx: 0, vy: 0, isGrounded: false });
     const keysRef = useRef<{ [key: string]: boolean }>({});
     const requestIdRef = useRef<number>(0);
+    const hasStartedRef = useRef(false);
+    const jumpRequestedRef = useRef(false);
+    const obstaclesRef = useRef<Obstacle[]>([]);
+    const nextObstacleXRef = useRef(600);
+    const lastPlayerXRef = useRef(0);
+    const scoreAccumRef = useRef(0);
+    const scoreRef = useRef(0);
 
     // Ambient
     const cloudsRef = useRef<Cloud[]>([]);
@@ -104,13 +107,13 @@ export default function PlatformerGame() {
         rImg.src = '/world1_road.png';
         roadImg.current = rImg;
 
-        const sImg = new Image();
-        sImg.src = '/shahad.png';
-        shahadImg.current = sImg;
-
         const pImg = new Image();
         pImg.src = '/bhondu.png';
         playerImg.current = pImg;
+
+        // Load jump sound
+        const audio = new Audio('/sound/jump.wav');
+        jumpSound.current = audio;
 
         // Init Clouds
         cloudsRef.current = Array.from({ length: 8 }).map(() => ({
@@ -123,7 +126,7 @@ export default function PlatformerGame() {
 
     // Init Level
     useEffect(() => {
-        const level = currentWorld === 1 ? LEVEL_1 : LEVEL_2;
+        const level = LEVEL_1;
         playerRef.current = {
             x: level.spawn.x,
             y: level.spawn.y,
@@ -131,11 +134,49 @@ export default function PlatformerGame() {
             vy: 0,
             isGrounded: false
         };
-    }, [currentWorld]);
+        hasStartedRef.current = false;
+        jumpRequestedRef.current = false;
+        obstaclesRef.current = [];
+        nextObstacleXRef.current = 0;
+        lastPlayerXRef.current = level.spawn.x;
+        scoreAccumRef.current = 0;
+        setScore(0);
+        scoreRef.current = 0;
+    }, []);
+
+    // Load max score
+    useEffect(() => {
+        const stored = typeof window !== 'undefined' ? window.localStorage.getItem('platformer.maxScore') : null;
+        if (stored) {
+            const value = Number.parseInt(stored, 10);
+            if (!Number.isNaN(value)) setMaxScore(value);
+        }
+    }, []);
+
+    // Persist max score
+    useEffect(() => {
+        if (score > maxScore) {
+            setMaxScore(score);
+            if (typeof window !== 'undefined') {
+                window.localStorage.setItem('platformer.maxScore', String(score));
+            }
+        }
+    }, [score, maxScore]);
 
     // Input Handlers
     useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => { keysRef.current[e.code] = true; };
+        const handleKeyDown = (e: KeyboardEvent) => {
+            keysRef.current[e.code] = true;
+
+            if (e.code === 'Space') {
+                // Space starts the forward movement.
+                hasStartedRef.current = true;
+                jumpRequestedRef.current = true;
+
+                // Also allow Space to dismiss the dialogue overlay.
+                if (gameState === 'DIALOGUE') setGameState('PLAYING');
+            }
+        };
         const handleKeyUp = (e: KeyboardEvent) => { keysRef.current[e.code] = false; };
 
         window.addEventListener('keydown', handleKeyDown);
@@ -144,7 +185,7 @@ export default function PlatformerGame() {
             window.removeEventListener('keydown', handleKeyDown);
             window.removeEventListener('keyup', handleKeyUp);
         };
-    }, []);
+    }, [gameState]);
 
     // Main Game Loop
     useEffect(() => {
@@ -164,39 +205,65 @@ export default function PlatformerGame() {
         const loop = () => {
             if (!canvas || !ctx) return;
 
-            const level = currentWorld === 1 ? LEVEL_1 : LEVEL_2;
+            const level = LEVEL_1;
             const platforms = resolvePlatformsForCanvas(level, canvas.height);
 
             // --- UPDATE ---
 
-            // Move Clouds (World 1 only)
-            if (currentWorld === 1) {
-                cloudsRef.current.forEach(cloud => {
-                    cloud.x -= cloud.speed;
-                    if (cloud.x + 200 < 0) cloud.x = canvas.width + Math.random() * 200;
-                });
-            }
+            // Move Clouds
+            cloudsRef.current.forEach(cloud => {
+                cloud.x -= cloud.speed;
+                if (cloud.x + 200 < 0) cloud.x = canvas.width + Math.random() * 200;
+            });
 
             // Update Physics ONLY if Playing
             if (gameState === 'PLAYING') {
                 const p = playerRef.current;
 
-                // Horizontal Movement
-                if (keysRef.current['ArrowRight']) p.vx += 3.0;
-                if (keysRef.current['ArrowLeft']) p.vx -= 3.0;
+                // Auto-run forward (starts after first Space press)
+                if (hasStartedRef.current) {
+                    p.vx = BASE_RUN_SPEED;
+                    p.x += p.vx;
+                } else {
+                    p.vx = 0;
+                }
 
-                // Friction & Cap
-                p.vx *= FRICTION;
-                p.x += p.vx;
+                // Score based on distance traveled (Dino-like)
+                if (hasStartedRef.current) {
+                    const dx = Math.max(0, p.x - lastPlayerXRef.current);
+                    if (dx > 0) {
+                        scoreAccumRef.current += dx * SCORE_PER_PIXEL;
+                        const nextScore = Math.floor(scoreAccumRef.current);
+                        if (nextScore !== scoreRef.current) {
+                            scoreRef.current = nextScore;
+                            setScore(nextScore);
+                        }
+                    }
+                }
+                lastPlayerXRef.current = p.x;
 
                 // Gravity
                 p.vy += GRAVITY;
                 p.y += p.vy;
 
-                // Jump
-                if (keysRef.current['Space'] && p.isGrounded) {
+                // Jump (edge-triggered via keydown)
+                if (jumpRequestedRef.current && p.isGrounded) {
                     p.vy = JUMP_FORCE;
                     p.isGrounded = false;
+                    jumpRequestedRef.current = false;
+                    
+                    // Play jump sound
+                    if (jumpSound.current) {
+                        jumpSound.current.currentTime = 0;
+                        jumpSound.current.play().catch(() => {
+                            // Ignore if sound fails to play
+                        });
+                    }
+                }
+
+                // If Space was pressed mid-air, clear the request so it doesn't auto-jump on landing.
+                if (jumpRequestedRef.current && !p.isGrounded && !keysRef.current['Space']) {
+                    jumpRequestedRef.current = false;
                 }
 
                 // Platform Collisions
@@ -217,6 +284,56 @@ export default function PlatformerGame() {
                     }
                 }
 
+                // Spawn obstacles ahead as player progresses (off-screen to the right)
+                if (hasStartedRef.current) {
+                    const spawnStart = p.x + canvas.width + 200;
+                    if (nextObstacleXRef.current < spawnStart) {
+                        nextObstacleXRef.current = spawnStart;
+                    }
+                    while (nextObstacleXRef.current < p.x + canvas.width * 2) {
+                        const width = OBSTACLE_MIN_WIDTH + Math.random() * (OBSTACLE_MAX_WIDTH - OBSTACLE_MIN_WIDTH);
+                        const height = OBSTACLE_MIN_HEIGHT + Math.random() * (OBSTACLE_MAX_HEIGHT - OBSTACLE_MIN_HEIGHT);
+                        obstaclesRef.current.push({
+                            x: nextObstacleXRef.current,
+                            y: 0, // will be placed on ground in render
+                            width,
+                            height,
+                            kind: Math.random() < 0.5 ? 'rock' : Math.random() < 0.5 ? 'crate' : 'spike'
+                        });
+                        const gap = OBSTACLE_MIN_GAP + Math.random() * (OBSTACLE_MAX_GAP - OBSTACLE_MIN_GAP);
+                        nextObstacleXRef.current += gap;
+                    }
+                }
+
+                // Collision with obstacles
+                const ground = platforms.find(plat => plat.type === 'ground');
+                if (ground) {
+                    const groundY = ground.y;
+                    for (const obs of obstaclesRef.current) {
+                        const obsY = groundY - obs.height;
+                        if (
+                            p.x < obs.x + obs.width &&
+                            p.x + PLAYER_SIZE > obs.x &&
+                            p.y < obsY + obs.height &&
+                            p.y + PLAYER_SIZE > obsY
+                        ) {
+                            // Reset on hit
+                            p.x = level.spawn.x;
+                            p.y = level.spawn.y;
+                            p.vx = 0;
+                            p.vy = 0;
+                            hasStartedRef.current = false;
+                            obstaclesRef.current = [];
+                            nextObstacleXRef.current = 0;
+                            lastPlayerXRef.current = p.x;
+                            scoreAccumRef.current = 0;
+                            scoreRef.current = 0;
+                            setScore(0);
+                            break;
+                        }
+                    }
+                }
+
                 // Fall off world
                 if (p.y > canvas.height + 100) {
                     // Respawn
@@ -224,15 +341,6 @@ export default function PlatformerGame() {
                     p.y = level.spawn.y;
                     p.vx = 0;
                     p.vy = 0;
-                }
-
-                // Win Condition
-                if (p.x >= level.goal.x) {
-                    if (currentWorld === 1) {
-                        setGameState('LEVEL_COMPLETE');
-                    } else {
-                        setGameState('VICTORY');
-                    }
                 }
             }
 
@@ -250,7 +358,7 @@ export default function PlatformerGame() {
             ctx.fillRect(0, 0, canvas.width, canvas.height); // Fixed background
 
             // Clouds (World 1 Only)
-            if (currentWorld === 1 && cloudImg.current) {
+            if (cloudImg.current) {
                 cloudsRef.current.forEach(cloud => {
                     const w = 100 * cloud.scale;
                     const h = 60 * cloud.scale; // Aspect ratio approx
@@ -265,39 +373,53 @@ export default function PlatformerGame() {
 
             // Platforms
             platforms.forEach(plat => {
-                if (currentWorld === 1 && plat.type === 'ground' && roadImg.current) {
-                    // Tile the road image with overlap to hide borders
-                    const tileSize = GROUND_HEIGHT;
-                    const overlap = 2; // Overlap to hide seams/borders
-                    // Calculate number of tiles needed based on effective width (tileSize - overlap)
-                    const effectiveWidth = tileSize - overlap;
-                    const numTiles = Math.ceil(plat.width / effectiveWidth);
+                if (plat.type === 'ground' && roadImg.current) {
+                    // Tile only the visible road range (keeps World 1 effectively infinite and fast)
+                    const tileWidth = ROAD_TILE_WIDTH;
+                    const overlap = ROAD_TILE_OVERLAP;
+                    const effectiveWidth = tileWidth - overlap;
+                    const aspect = roadImg.current.height / roadImg.current.width;
+                    const roadHeight = tileWidth * aspect;
+                    const roadY = plat.y + plat.height - roadHeight; // anchor to ground bottom
 
-                    for (let i = 0; i < numTiles; i++) {
-                        // Draw tiles slightly closer together
-                        ctx.drawImage(roadImg.current, plat.x + (i * effectiveWidth), plat.y, tileSize, plat.height);
+                    const viewLeft = -cameraX;
+                    const viewRight = viewLeft + canvas.width;
+                    const drawLeft = Math.max(plat.x, viewLeft - tileWidth * 2);
+                    const drawRight = Math.min(plat.x + plat.width, viewRight + tileWidth * 2);
+
+                    const startI = Math.floor((drawLeft - plat.x) / effectiveWidth);
+                    const endI = Math.ceil((drawRight - plat.x) / effectiveWidth);
+
+                    for (let i = startI; i <= endI; i++) {
+                        const x = plat.x + i * effectiveWidth;
+                        if (x + tileWidth < drawLeft || x > drawRight) continue;
+                        ctx.drawImage(roadImg.current, x, roadY, tileWidth, roadHeight);
                     }
                 } else {
+                    const viewLeft = -cameraX;
+                    const viewRight = viewLeft + canvas.width;
+                    const x = Math.max(plat.x, viewLeft);
+                    const w = Math.min(plat.x + plat.width, viewRight) - x;
+                    if (w <= 0) return;
                     ctx.fillStyle = '#654321';
-                    ctx.fillRect(plat.x, plat.y, plat.width, plat.height);
+                    ctx.fillRect(x, plat.y, w, plat.height);
                 }
             });
 
-            // World 1 Start Sign
-            if (currentWorld === 1 && shahadImg.current) {
-                const ground = platforms.find(plat => plat.type === 'ground');
-                if (ground) {
-                    const signHeight = 120;
-                    const signWidth = (shahadImg.current.width / shahadImg.current.height) * signHeight;
-                    const signX = 120;
-                    const signY = ground.y - signHeight + 10;
-                    ctx.drawImage(shahadImg.current, signX, signY, signWidth, signHeight);
-                }
+            // Obstacles
+            const ground = platforms.find(plat => plat.type === 'ground');
+            if (ground) {
+                const groundY = ground.y;
+                const viewLeft = -cameraX;
+                const viewRight = viewLeft + canvas.width;
+                obstaclesRef.current = obstaclesRef.current.filter(obs => obs.x + obs.width > viewLeft - 400);
+                obstaclesRef.current.forEach(obs => {
+                    if (obs.x > viewRight + 400) return;
+                    const obsY = groundY - obs.height;
+                    ctx.fillStyle = obs.kind === 'spike' ? '#B91C1C' : obs.kind === 'crate' ? '#8B5A2B' : '#4B5563';
+                    ctx.fillRect(obs.x, obsY, obs.width, obs.height);
+                });
             }
-
-            // Goal
-            ctx.fillStyle = 'gold';
-            ctx.fillRect(level.goal.x, level.goal.y - 50, 50, 50);
 
             // Player (Bike)
             if (playerImg.current) {
@@ -320,19 +442,7 @@ export default function PlatformerGame() {
             window.removeEventListener('resize', resize);
             cancelAnimationFrame(requestIdRef.current);
         };
-    }, [gameState, currentWorld]);
-
-    // Code Submit
-    const handleCodeSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (codeInput.toUpperCase() === WORLD_2_CODE) {
-            setCurrentWorld(2);
-            setCodeInput('');
-            setGameState('DIALOGUE'); // Will trigger level 2 dialogue
-        } else {
-            setCodeError(true);
-        }
-    };
+    }, [gameState]);
 
     return (
         <div className="relative w-full h-screen bg-black">
@@ -355,49 +465,12 @@ export default function PlatformerGame() {
                 </div>
             )}
 
-            {gameState === 'LEVEL_COMPLETE' && (
-                <div className="absolute inset-0 bg-green-900/90 flex items-center justify-center p-8 z-10">
-                    <div className="bg-white p-8 rounded-lg max-w-md text-center shadow-xl border-4 border-green-600">
-                        <h2 className="text-2xl font-bold mb-4 text-black font-mono">CHECKPOINT REACHED</h2>
-                        <p className="text-gray-700 mb-4">Enter the secret code to unlock World 2.</p>
-                        <p className="text-sm text-gray-500 mb-4">(Hint: It&apos;s the name of the most famous plumber)</p>
-
-                        <form onSubmit={handleCodeSubmit} className="flex flex-col gap-4">
-                            <input
-                                type="text"
-                                value={codeInput}
-                                onChange={(e) => { setCodeInput(e.target.value); setCodeError(false); }}
-                                className="border-2 border-gray-300 p-2 text-xl text-center text-black uppercase rounded font-mono"
-                                placeholder="ENTER CODE"
-                                autoFocus
-                            />
-                            {codeError && <p className="text-red-600 font-bold">Incorrect Code! Try again.</p>}
-                            <button type="submit" className="px-6 py-3 bg-green-600 text-white font-bold rounded hover:bg-green-700 font-mono shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
-                                UNLOCK WORLD 2
-                            </button>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {gameState === 'VICTORY' && (
-                <div className="absolute inset-0 bg-yellow-900/90 flex items-center justify-center z-10">
-                    <div className="text-center text-white">
-                        <h1 className="text-6xl font-bold mb-4 font-mono text-yellow-300 drop-shadow-[5px_5px_0_rgba(0,0,0,1)]">YOU WIN!</h1>
-                        <p className="text-2xl mb-8">You have conquered both worlds.</p>
-                        <button
-                            onClick={() => { setCurrentWorld(1); setGameState('DIALOGUE'); }}
-                            className="px-8 py-4 bg-white text-yellow-900 font-bold rounded text-xl font-mono shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all"
-                        >
-                            PLAY AGAIN
-                        </button>
-                    </div>
-                </div>
-            )}
-
             {/* HUD */}
             <div className="absolute top-4 left-4 text-white font-bold text-xl drop-shadow-[2px_2px_0_rgba(0,0,0,1)] font-mono">
-                WORLD {currentWorld}
+                WORLD 1
+            </div>
+            <div className="absolute top-4 right-4 text-white font-bold text-xl drop-shadow-[2px_2px_0_rgba(0,0,0,1)] font-mono">
+                SCORE {score} · MAX {maxScore}
             </div>
         </div>
     );
