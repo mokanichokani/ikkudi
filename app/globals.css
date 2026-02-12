@@ -24,3 +24,123 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.pixelated {
+  image-rendering: pixelated;
+}
+
+@keyframes noBlastStrong {
+  0% {
+    transform: scale(1) rotate(0deg);
+    filter: brightness(1);
+  }
+  20% {
+    transform: scale(1.25) rotate(-8deg);
+    filter: brightness(1.8) saturate(1.6);
+  }
+  50% {
+    transform: scale(0.92) rotate(9deg);
+    filter: brightness(2.4) saturate(2);
+  }
+  100% {
+    transform: scale(0.05) rotate(45deg);
+    opacity: 0;
+    filter: brightness(3);
+  }
+}
+
+@keyframes blastShake {
+  0%,
+  100% { transform: translate(0, 0); }
+  20% { transform: translate(-6px, 2px); }
+  40% { transform: translate(5px, -3px); }
+  60% { transform: translate(-4px, -1px); }
+  80% { transform: translate(3px, 2px); }
+}
+
+@keyframes blastFlash {
+  0% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  20% {
+    opacity: 0.95;
+    transform: scale(1.6);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(3.4);
+  }
+}
+
+@keyframes boomPulse {
+  0%,
+  100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+@keyframes dangerFlash {
+  0%,
+  100% {
+    color: #b91c1c;
+  }
+  50% {
+    color: #7f1d1d;
+  }
+}
+
+.animate-no-blast-strong {
+  animation: noBlastStrong 520ms cubic-bezier(0.2, 0.9, 0.1, 1) forwards;
+}
+
+.animate-danger-flash {
+  animation: dangerFlash 900ms steps(2, end) infinite;
+}
+
+.animate-blast-shake {
+  animation: blastShake 360ms linear;
+}
+
+.blast-flash-overlay {
+  position: absolute;
+  inset: -20%;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(255, 235, 150, 0.95) 0%, rgba(255, 120, 0, 0.75) 38%, rgba(140, 0, 0, 0) 72%);
+  animation: blastFlash 620ms ease-out forwards;
+  mix-blend-mode: screen;
+  z-index: 5;
+}
+
+.blast-boom-badge {
+  animation: boomPulse 620ms steps(2, end) infinite;
+  box-shadow: 0 0 0 2px rgba(120, 0, 0, 0.2), 0 0 20px rgba(255, 120, 0, 0.35);
+}
+
+@keyframes meteorFly {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(153deg) scale(0.85);
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  75% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(-150vw, 100vh, 0) rotate(153deg) scale(1.06);
+    opacity: 0;
+  }
+}
+
+.meteor-strike {
+  position: absolute;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 226, 132, 0.96) 28%, rgba(255, 120, 22, 0.72) 70%, rgba(255, 80, 22, 0));
+  box-shadow: 0 0 10px rgba(255, 190, 72, 0.85), 0 0 22px rgba(255, 122, 24, 0.65);
+  transform-origin: right center;
+  animation-name: meteorFly;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
