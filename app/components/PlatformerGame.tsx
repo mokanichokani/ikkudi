@@ -371,6 +371,40 @@ export default function PlatformerGame() {
         setGameState('PLAYING');
     };
 
+    const goToKandivaliFromStart = () => {
+        const level = LEVEL_1;
+        const p = playerRef.current;
+        const targetScore = 1760;
+        const targetX = scoreToWorldX(level.spawn.x, targetScore) + 40;
+
+        p.x = targetX;
+        p.y = level.spawn.y;
+        p.vx = 0;
+        p.vy = 0;
+        p.isGrounded = false;
+
+        hasStartedRef.current = false;
+        jumpRequestedRef.current = false;
+        lastPlayerXRef.current = p.x;
+        scoreAccumRef.current = targetScore;
+        scoreRef.current = targetScore;
+        setScore(targetScore);
+        nextObstacleXRef.current = Math.max(nextObstacleXRef.current, p.x + 700);
+        obstaclesRef.current = obstaclesRef.current.filter((obs) => obs.x > p.x + 120);
+
+        deathCheckpointRef.current = {
+            x: Math.max(level.spawn.x, p.x - 140),
+            y: level.spawn.y,
+            scoreAccum: targetScore,
+            score: targetScore,
+        };
+
+        hasShownKandivaliDialogueRef.current = true;
+        setKandivaliDialogueIndex(0);
+        setKandivaliNoPressed(false);
+        setGameState('KANDIVALI_DIALOGUE');
+    };
+
     useEffect(() => {
         setTypedChars(0);
     }, [dialogueIndex, kandivaliDialogueIndex, gameState]);
@@ -1098,6 +1132,21 @@ export default function PlatformerGame() {
                             </button>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {gameState === 'PLAYING' && !hasStartedRef.current && score === 0 && !hasShownKandivaliDialogueRef.current && (
+                <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-10">
+                    <button
+                        onClick={() => {
+                            playButtonSelectSound();
+                            goToKandivaliFromStart();
+                        }}
+                        className="px-6 py-3 bg-fuchsia-700 text-white rounded hover:bg-fuchsia-800 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] uppercase text-xs"
+                        style={{ fontFamily: 'var(--font-pixel), monospace' }}
+                    >
+                        Go To Kandivali
+                    </button>
                 </div>
             )}
 
