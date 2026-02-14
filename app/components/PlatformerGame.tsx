@@ -3,7 +3,7 @@
 import NextImage from 'next/image';
 import { useEffect, useRef, useState } from 'react';
 
-type GameState = 'DIALOGUE' | 'PLAYING' | 'KANDIVALI_DIALOGUE';
+type GameState = 'DIALOGUE' | 'PLAYING' | 'KANDIVALI_DIALOGUE' | 'DEAD';
 
 interface Rect {
     x: number;
@@ -318,6 +318,59 @@ export default function PlatformerGame() {
         startPlaying();
     };
 
+    const resetRunToStart = () => {
+        const level = LEVEL_1;
+        const p = playerRef.current;
+        p.x = level.spawn.x;
+        p.y = level.spawn.y;
+        p.vx = 0;
+        p.vy = 0;
+        p.isGrounded = false;
+
+        hasStartedRef.current = false;
+        jumpRequestedRef.current = false;
+        obstaclesRef.current = [];
+        nextObstacleXRef.current = 0;
+        lastPlayerXRef.current = p.x;
+        scoreAccumRef.current = 0;
+        scoreRef.current = 0;
+        setScore(0);
+
+        deathCheckpointRef.current = {
+            x: level.spawn.x,
+            y: level.spawn.y,
+            scoreAccum: 0,
+            score: 0,
+        };
+
+        hasShownKandivaliDialogueRef.current = false;
+        setGameState('PLAYING');
+    };
+
+    const respawnFromCheckpoint = () => {
+        const level = LEVEL_1;
+        const p = playerRef.current;
+        const checkpoint = deathCheckpointRef.current;
+
+        p.x = checkpoint.x;
+        p.y = checkpoint.y;
+        p.vx = 0;
+        p.vy = 0;
+        p.isGrounded = false;
+
+        hasStartedRef.current = true;
+        jumpRequestedRef.current = false;
+        lastPlayerXRef.current = p.x;
+        scoreAccumRef.current = checkpoint.scoreAccum;
+        scoreRef.current = checkpoint.score;
+        setScore(checkpoint.score);
+        nextObstacleXRef.current = Math.max(nextObstacleXRef.current, p.x + 700);
+        obstaclesRef.current = obstaclesRef.current.filter((obs) => obs.x > p.x + 120);
+        hasShownKandivaliDialogueRef.current = p.x > scoreToWorldX(level.spawn.x, 1750);
+
+        setGameState('PLAYING');
+    };
+
     useEffect(() => {
         setTypedChars(0);
     }, [dialogueIndex, kandivaliDialogueIndex, gameState]);
@@ -377,6 +430,12 @@ export default function PlatformerGame() {
     const lastPlayerXRef = useRef(0);
     const scoreAccumRef = useRef(0);
     const scoreRef = useRef(0);
+    const deathCheckpointRef = useRef({
+        x: LEVEL_1.spawn.x,
+        y: LEVEL_1.spawn.y,
+        scoreAccum: 0,
+        score: 0,
+    });
 
     // Ambient
     const cloudsRef = useRef<Cloud[]>([]);
@@ -471,6 +530,12 @@ export default function PlatformerGame() {
         scoreAccumRef.current = 0;
         setScore(0);
         scoreRef.current = 0;
+        deathCheckpointRef.current = {
+            x: level.spawn.x,
+            y: level.spawn.y,
+            scoreAccum: 0,
+            score: 0,
+        };
         setDialogueIndex(0);
         setKandivaliDialogueIndex(0);
         setKandivaliNoPressed(false);
@@ -503,38 +568,62 @@ export default function PlatformerGame() {
 
     // Input Handlers
     useEffect(() => {
+        const handlePrimaryAction = () => {
+            if (gameState === 'DEAD') {
+                respawnFromCheckpoint();
+                return;
+            }
+
+            if (gameState !== 'PLAYING') {
+                if (isValentinePrompt || isKandivaliPrompt) {
+                    return;
+                }
+                advanceDialogue();
+                return;
+            }
+
+            hasStartedRef.current = true;
+            jumpRequestedRef.current = true;
+
+            if (bgMusic.current && bgMusic.current.paused) {
+                bgMusic.current.play().catch(() => {
+                    // Ignore if audio fails to play
+                });
+            }
+        };
+
         const handleKeyDown = (e: KeyboardEvent) => {
             keysRef.current[e.code] = true;
 
             if (e.code === 'Space') {
-                if (gameState !== 'PLAYING') {
-                    e.preventDefault();
-                    if (isValentinePrompt || isKandivaliPrompt) {
-                        return;
-                    }
-                    advanceDialogue();
-                    return;
-                }
-
-                // Space starts the forward movement.
-                hasStartedRef.current = true;
-                jumpRequestedRef.current = true;
-
-                // Start background music on first interaction
-                if (bgMusic.current && bgMusic.current.paused) {
-                    bgMusic.current.play().catch(() => {
-                        // Ignore if audio fails to play
-                    });
-                }
+                e.preventDefault();
+                handlePrimaryAction();
             }
         };
         const handleKeyUp = (e: KeyboardEvent) => { keysRef.current[e.code] = false; };
+        const handlePointerDown = (e: PointerEvent) => {
+            e.preventDefault();
+            handlePrimaryAction();
+        };
+        const handleTouchStart = (e: TouchEvent) => {
+            e.preventDefault();
+            handlePrimaryAction();
+        };
 
         window.addEventListener('keydown', handleKeyDown);
         window.addEventListener('keyup', handleKeyUp);
+        const canvas = canvasRef.current;
+        if (canvas) {
+            canvas.addEventListener('pointerdown', handlePointerDown);
+            canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+        }
         return () => {
             window.removeEventListener('keydown', handleKeyDown);
             window.removeEventListener('keyup', handleKeyUp);
+            if (canvas) {
+                canvas.removeEventListener('pointerdown', handlePointerDown);
+                canvas.removeEventListener('touchstart', handleTouchStart);
+            }
         };
     }, [advanceDialogue, gameState, isKandivaliPrompt, isValentinePrompt]);
 
@@ -600,6 +689,13 @@ export default function PlatformerGame() {
                             setScore(nextScore);
                         }
                     }
+
+                    deathCheckpointRef.current = {
+                        x: Math.max(level.spawn.x, p.x - 140),
+                        y: level.spawn.y,
+                        scoreAccum: scoreAccumRef.current,
+                        score: scoreRef.current,
+                    };
                 }
                 lastPlayerXRef.current = p.x;
 
@@ -696,19 +792,15 @@ export default function PlatformerGame() {
                             p.y < obsY + obs.height &&
                             p.y + PLAYER_SIZE > obsY
                         ) {
-                            // Reset on hit
-                            p.x = level.spawn.x;
+                            // Enter death state and offer checkpoint respawn.
+                            p.x = Math.max(level.spawn.x, p.x - 40);
                             p.y = level.spawn.y;
                             p.vx = 0;
                             p.vy = 0;
+                            p.isGrounded = false;
                             hasStartedRef.current = false;
-                            obstaclesRef.current = [];
-                            nextObstacleXRef.current = 0;
-                            lastPlayerXRef.current = p.x;
-                            scoreAccumRef.current = 0;
-                            scoreRef.current = 0;
-                            setScore(0);
-                            hasShownKandivaliDialogueRef.current = false;
+                            jumpRequestedRef.current = false;
+                            setGameState('DEAD');
                             break;
                         }
                     }
@@ -867,8 +959,8 @@ export default function PlatformerGame() {
     }, [gameState]);
 
     return (
-        <div className="relative w-full h-screen bg-black">
-            <canvas ref={canvasRef} className="block w-full h-full" />
+        <div className="relative w-full h-screen bg-black touch-none">
+            <canvas ref={canvasRef} className="block w-full h-full touch-none" />
 
             {declinedValentine && gameState === 'DIALOGUE' && (
                 <div className="absolute inset-0 pointer-events-none z-20 overflow-hidden">
@@ -976,6 +1068,35 @@ export default function PlatformerGame() {
                                 {isTyping ? 'Continue' : isInitialDialogue && isLastDialogueLine ? 'Start Ride' : 'Next'}
                             </button>
                         )}
+                    </div>
+                </div>
+            )}
+
+            {gameState === 'DEAD' && (
+                <div className="absolute inset-0 bg-black/70 flex items-center justify-center p-6 z-10">
+                    <div className="bg-white p-6 rounded-lg max-w-md w-full shadow-xl border-4 border-red-600 text-center" style={{ fontFamily: 'var(--font-pixel), monospace' }}>
+                        <h2 className="text-xl text-black mb-3">You Crashed!</h2>
+                        <p className="text-sm text-gray-700 mb-5">Respawn from this point?</p>
+                        <div className="flex items-center justify-center gap-3">
+                            <button
+                                onClick={() => {
+                                    playButtonSelectSound();
+                                    respawnFromCheckpoint();
+                                }}
+                                className="px-5 py-3 bg-emerald-600 text-white rounded hover:bg-emerald-700 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] uppercase text-xs"
+                            >
+                                Respawn Here
+                            </button>
+                            <button
+                                onClick={() => {
+                                    playButtonSelectSound();
+                                    resetRunToStart();
+                                }}
+                                className="px-5 py-3 bg-slate-700 text-white rounded hover:bg-slate-800 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] uppercase text-xs"
+                            >
+                                Restart
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
