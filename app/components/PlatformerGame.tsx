@@ -410,7 +410,7 @@ export default function PlatformerGame() {
     }, [dialogueIndex, kandivaliDialogueIndex, gameState]);
 
     useEffect(() => {
-        if (gameState === 'PLAYING') return;
+        if (gameState !== 'DIALOGUE' && gameState !== 'KANDIVALI_DIALOGUE') return;
         if (typedChars >= dialogueText.length) return;
 
         const timer = window.setTimeout(() => {
@@ -421,7 +421,7 @@ export default function PlatformerGame() {
     }, [dialogueText.length, gameState, typedChars]);
 
     useEffect(() => {
-        if (gameState !== 'PLAYING' && isTyping) {
+        if ((gameState === 'DIALOGUE' || gameState === 'KANDIVALI_DIALOGUE') && isTyping) {
             startTypingSound();
         } else {
             stopTypingSound();
@@ -818,7 +818,8 @@ export default function PlatformerGame() {
                 const ground = platforms.find(plat => plat.type === 'ground');
                 if (ground) {
                     const groundY = ground.y;
-                    for (const obs of obstaclesRef.current) {
+                    for (let i = 0; i < obstaclesRef.current.length; i++) {
+                        const obs = obstaclesRef.current[i];
                         const obsY = groundY - obs.height + OBSTACLE_VERTICAL_OFFSET;
                         if (
                             p.x < obs.x + obs.width &&
@@ -826,6 +827,7 @@ export default function PlatformerGame() {
                             p.y < obsY + obs.height &&
                             p.y + PLAYER_SIZE > obsY
                         ) {
+                            obstaclesRef.current.splice(i, 1);
                             // Enter death state and offer checkpoint respawn.
                             p.x = Math.max(level.spawn.x, p.x - 40);
                             p.y = level.spawn.y;
