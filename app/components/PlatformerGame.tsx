@@ -59,6 +59,8 @@ const SCORE_PER_PIXEL = 0.05;
 const TREEHOUSE_HEIGHT = 450;
 const TREEHOUSE_X = 50;
 const TYPEWRITER_MS = 24;
+const MOBILE_VIEWPORT_BREAKPOINT = 900;
+const MOBILE_WORLD_VIEW_MULTIPLIER = 1.28;
 
 const LANDMARK_HEIGHTS: Record<LandmarkKind, number> = {
     moviemax: 280,
@@ -679,8 +681,13 @@ export default function PlatformerGame() {
         if (!ctx) return;
 
         const resize = () => {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
+            const isMobileViewport = window.innerWidth <= MOBILE_VIEWPORT_BREAKPOINT;
+            const worldViewMultiplier = isMobileViewport ? MOBILE_WORLD_VIEW_MULTIPLIER : 1;
+
+            canvas.width = Math.floor(window.innerWidth * worldViewMultiplier);
+            canvas.height = Math.floor(window.innerHeight * worldViewMultiplier);
+            canvas.style.width = `${window.innerWidth}px`;
+            canvas.style.height = `${window.innerHeight}px`;
         };
         window.addEventListener('resize', resize);
         resize();
