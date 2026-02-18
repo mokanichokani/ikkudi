@@ -83,7 +83,7 @@ const KANDIVALI_MONOLOGUE: DialogueLine[] = [
     },
     {
         speaker: 'JKG Moki',
-        text: 'I-I... I kept rehearsing this in my head a thousand times, and still I am stuttering now. I sex you.'
+        text: 'I-I... I kept rehearsing this in my head a thousand times, and still I am stuttering now. I love you.'
     },
     {
         speaker: 'JKG Moki',
