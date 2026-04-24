@@ -1,8 +1,43 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --bg-primary: #fff8dc;
+  --bg-secondary: #ffffff;
+  --text-primary: #171717;
+  --text-on-accent: #ffffff;
+  --sky-day: #87CEEB;
+  --sky-evening: #3D4F9A;
+  --sky-night: #0A1640;
+  --rainbow-red: #b91c1c;
+  --rainbow-orange: #d97706;
+  --rainbow-yellow: #ffca28;
+  --rainbow-green: #2e7d32;
+  --rainbow-blue: #1a237e;
+  --rainbow-indigo: #3730a3;
+  --rainbow-violet: #6d28d9;
+}
+
+.dark {
+  --bg-primary: #0d0d1a;
+  --bg-secondary: #12121f;
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  --text-primary: #ededed;
+  --text-on-accent: #0d0d1a;
+  --sky-day: #1a2a4a;
+  --sky-evening: #0a1230;
+  --sky-night: #05091f;
+  --rainbow-red: #ff4d4d;
+  --rainbow-orange: #ff9933;
+  --rainbow-yellow: #ffe033;
+  --rainbow-green: #39ff14;
+  --rainbow-blue: #00aaff;
+  --rainbow-indigo: #7c3aed;
+  --rainbow-violet: #d946ef;
 }
 
 @theme inline {
@@ -143,4 +178,35 @@ body {
   animation-name: meteorFly;
   animation-timing-function: linear;
   animation-iteration-count: infinite;
+}
+
+@keyframes rainbow-border {
+  0%   { border-color: var(--rainbow-red);    box-shadow: 4px 4px 0 var(--rainbow-red); }
+  14%  { border-color: var(--rainbow-orange); box-shadow: 4px 4px 0 var(--rainbow-orange); }
+  28%  { border-color: var(--rainbow-yellow); box-shadow: 4px 4px 0 var(--rainbow-yellow); }
+  42%  { border-color: var(--rainbow-green);  box-shadow: 4px 4px 0 var(--rainbow-green); }
+  57%  { border-color: var(--rainbow-blue);   box-shadow: 4px 4px 0 var(--rainbow-blue); }
+  71%  { border-color: var(--rainbow-indigo); box-shadow: 4px 4px 0 var(--rainbow-indigo); }
+  85%  { border-color: var(--rainbow-violet); box-shadow: 4px 4px 0 var(--rainbow-violet); }
+  100% { border-color: var(--rainbow-red);    box-shadow: 4px 4px 0 var(--rainbow-red); }
+}
+
+.dark .rainbow-border {
+  animation: rainbow-border 4s linear infinite;
+}
+
+.dark .rainbow-text {
+  background: linear-gradient(
+    90deg,
+    var(--rainbow-red),
+    var(--rainbow-orange),
+    var(--rainbow-yellow),
+    var(--rainbow-green),
+    var(--rainbow-blue),
+    var(--rainbow-indigo),
+    var(--rainbow-violet)
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }

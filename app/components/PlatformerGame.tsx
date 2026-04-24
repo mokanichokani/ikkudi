@@ -92,10 +92,10 @@ const KANDIVALI_MONOLOGUE: DialogueLine[] = [
 ];
 
 const SKY_KEYFRAMES = [
-    { at: 0, top: '#87CEEB', bottom: '#BEE9FF' },      // Day
-    { at: 0.38, top: '#5FA8E8', bottom: '#F7C17A' },   // Afternoon
-    { at: 0.72, top: '#3D4F9A', bottom: '#D9785A' },   // Evening
-    { at: 1, top: '#0A1640', bottom: '#13265C' }       // Night
+    { at: 0, top: 'var(--sky-day)', bottom: '#BEE9FF' },      // Day
+    { at: 0.38, top: '#5FA8E8', bottom: '#F7C17A' },          // Afternoon
+    { at: 0.72, top: 'var(--sky-evening)', bottom: '#D9785A' }, // Evening
+    { at: 1, top: 'var(--sky-night)', bottom: '#13265C' }     // Night
 ];
 
 const SPEAKER_SPRITES: Record<string, string> = {
@@ -144,6 +144,14 @@ function resolvePlatformsForCanvas(level: LevelData, canvasHeight: number): Plat
     });
 }
 
+function resolveCssColor(value: string): string {
+    if (value.startsWith('var(')) {
+        const varName = value.slice(4, -1).trim();
+        return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || value;
+    }
+    return value;
+}
+
 function hexToRgb(hex: string) {
     const clean = hex.replace('#', '');
     return {
@@ -154,8 +162,8 @@ function hexToRgb(hex: string) {
 }
 
 function lerpColor(a: string, b: string, t: number) {
-    const ca = hexToRgb(a);
-    const cb = hexToRgb(b);
+    const ca = hexToRgb(resolveCssColor(a));
+    const cb = hexToRgb(resolveCssColor(b));
     const r = Math.round(ca.r + (cb.r - ca.r) * t);
     const g = Math.round(ca.g + (cb.g - ca.g) * t);
     const bVal = Math.round(ca.b + (cb.b - ca.b) * t);
@@ -168,8 +176,8 @@ function getSkyGradient(ctx: CanvasRenderingContext2D, height: number, progress:
 
     if (rightIndex <= 0) {
         const gradient = ctx.createLinearGradient(0, 0, 0, height);
-        gradient.addColorStop(0, SKY_KEYFRAMES[0].top);
-        gradient.addColorStop(1, SKY_KEYFRAMES[0].bottom);
+        gradient.addColorStop(0, resolveCssColor(SKY_KEYFRAMES[0].top));
+        gradient.addColorStop(1, resolveCssColor(SKY_KEYFRAMES[0].bottom));
         return gradient;
     }
 
@@ -972,7 +980,7 @@ export default function PlatformerGame() {
                         const drawWidth = Math.max(obs.width, drawHeight * aspect);
                         ctx.drawImage(obsImg, obs.x, obsY, drawWidth, drawHeight);
                     } else {
-                        ctx.fillStyle = obs.kind === 'spike' ? '#B91C1C' : obs.kind === 'crate' ? '#8B5A2B' : '#4B5563';
+                        ctx.fillStyle = obs.kind === 'spike' ? resolveCssColor('var(--rainbow-red)') : obs.kind === 'crate' ? '#8B5A2B' : '#4B5563';
                         ctx.fillRect(obs.x, obsY, obs.width, obs.height);
                     }
                 });
@@ -1027,9 +1035,9 @@ export default function PlatformerGame() {
 
             {(gameState === 'DIALOGUE' || gameState === 'KANDIVALI_DIALOGUE') && (
                 <div className="absolute inset-0 bg-black/80 flex items-center justify-center p-8 z-10 transition-opacity duration-500">
-                    <div className={`bg-white p-6 rounded-lg max-w-2xl w-full shadow-xl border-4 border-blue-500 relative overflow-hidden ${blastWaveActive ? 'animate-blast-shake' : ''}`} style={{ fontFamily: 'var(--font-pixel), monospace' }}>
+                    <div className={`rainbow-border p-6 rounded-lg max-w-2xl w-full shadow-xl border-4 relative overflow-hidden ${blastWaveActive ? 'animate-blast-shake' : ''}`} style={{ fontFamily: 'var(--font-pixel), monospace', backgroundColor: 'var(--bg-primary)', borderColor: 'var(--rainbow-blue)' }}>
                         {blastWaveActive && <div className="blast-flash-overlay" />}
-                        <h2 className="text-lg md:text-xl mb-5 text-black leading-relaxed">{isKandivaliDialogue ? 'KANDIVALI' : 'MISSION BRIEF'}</h2>
+                        <h2 className="text-lg md:text-xl mb-5 leading-relaxed" style={{ color: 'var(--text-primary)' }}>{isKandivaliDialogue ? 'KANDIVALI' : 'MISSION BRIEF'}</h2>
                         <div className="flex items-start gap-4 md:gap-6 mb-6">
                             <div className="shrink-0 rounded border-4 border-black bg-slate-100 p-1">
                                 <NextImage
@@ -1042,8 +1050,8 @@ export default function PlatformerGame() {
                                 />
                             </div>
                             <div className="flex-1 text-left">
-                                <p className="text-[11px] md:text-xs uppercase tracking-wider text-blue-700 mb-3 leading-relaxed">{displayedSpeakerName}</p>
-                                <p className="text-[12px] md:text-sm text-gray-800 min-h-24 leading-7 wrap-break-word">{visibleDialogueText}{isTyping ? '▋' : ''}</p>
+                                <p className="text-[11px] md:text-xs uppercase tracking-wider mb-3 leading-relaxed" style={{ color: 'var(--rainbow-blue)' }}>{displayedSpeakerName}</p>
+                                <p className="text-[12px] md:text-sm min-h-24 leading-7 wrap-break-word" style={{ color: 'var(--text-primary)' }}>{visibleDialogueText}{isTyping ? '▋' : ''}</p>
                             </div>
                         </div>
 
@@ -1117,9 +1125,9 @@ export default function PlatformerGame() {
 
             {gameState === 'DEAD' && (
                 <div className="absolute inset-0 bg-black/70 flex items-center justify-center p-6 z-10">
-                    <div className="bg-white p-6 rounded-lg max-w-md w-full shadow-xl border-4 border-red-600 text-center" style={{ fontFamily: 'var(--font-pixel), monospace' }}>
-                        <h2 className="text-xl text-black mb-3">You Crashed!</h2>
-                        <p className="text-sm text-gray-700 mb-5">Respawn from this point?</p>
+                    <div className="rainbow-border p-6 rounded-lg max-w-md w-full shadow-xl border-4 text-center" style={{ fontFamily: 'var(--font-pixel), monospace', backgroundColor: 'var(--bg-primary)', borderColor: 'var(--rainbow-red)' }}>
+                        <h2 className="text-xl mb-3" style={{ color: 'var(--rainbow-red)' }}>You Crashed!</h2>
+                        <p className="text-sm mb-5" style={{ color: 'var(--text-primary)' }}>Respawn from this point?</p>
                         <div className="flex items-center justify-center gap-3">
                             <button
                                 onClick={() => {

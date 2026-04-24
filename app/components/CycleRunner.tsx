@@ -170,7 +170,7 @@ export default function CycleRunner() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             // Sky
-            ctx.fillStyle = '#87CEEB';
+            ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--sky-day').trim() || '#87CEEB';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
             // Ground
@@ -243,12 +243,15 @@ export default function CycleRunner() {
     }, [gameState]); // Re-bind when state changes to capture correct 'handleInput' context if needed, though handles mostly internally
 
     return (
-        <div className="w-full h-screen overflow-hidden bg-black touch-none">
+        <div className="w-full h-screen overflow-hidden bg-black touch-none relative">
             <canvas
                 ref={canvasRef}
                 className="block w-full h-full"
                 onClick={handleInput}
             />
+            <div className="absolute top-4 left-4 font-bold text-xl rainbow-text drop-shadow-[2px_2px_0_rgba(0,0,0,1)] font-mono">
+                {Math.floor(score)}m
+            </div>
         </div>
     );
 }
